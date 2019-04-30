@@ -50,41 +50,65 @@
 #include <px4_getopt.h>
 #include <px4_platform_common/px4_work_queue/ScheduledWorkItem.hpp>
 #include <uORB/topics/distance_sensor.h>
+#include "vl53l0x.h"
+#include "vl53l1x.h"
+
+using namespace time_literals;
+
+#define VL53L0X                                          1
+#define VL53L1X                                          0
 
 /* Configuration Constants */
-#define VL53LXX_BUS_DEFAULT                             PX4_I2C_BUS_EXPANSION
+#define VL53LXX_BUS_DEFAULT                              PX4_I2C_BUS_EXPANSION
+#define VL53LXX_BUS_CLOCK                                400000 // 400kHz bus clock speed
 
-#define VL53LXX_BASEADDR                                0x29
-#define VL53LXX_DEVICE_PATH                             "/dev/vl53lxx"
+#define VL53LXX_BASEADDR                                 0x29
+#define VL53LXX_DEVICE_PATH                              "/dev/vl53lxx"
 
-/* VL53LXX Registers addresses */
-#define VHV_CONFIG_PAD_SCL_SDA_EXTSUP_HW_REG            0x89
-#define MSRC_CONFIG_CONTROL_REG                         0x60
-#define FINAL_RANGE_CONFIG_MIN_COUNT_RATE_RTN_LIMIT_REG 0x44
-#define SYSTEM_SEQUENCE_CONFIG_REG                      0x01
-#define DYNAMIC_SPAD_REF_EN_START_OFFSET_REG            0x4F
-#define DYNAMIC_SPAD_NUM_REQUESTED_REF_SPAD_REG         0x4E
-#define GLOBAL_CONFIG_REF_EN_START_SELECT_REG           0xB6
-#define GLOBAL_CONFIG_SPAD_ENABLES_REF_0_REG            0xB0
-#define SYSTEM_INTERRUPT_CONFIG_GPIO_REG                0x0A
-#define SYSTEM_SEQUENCE_CONFIG_REG                      0x01
-#define SYSRANGE_START_REG                              0x00
-#define RESULT_INTERRUPT_STATUS_REG                     0x13
-#define SYSTEM_INTERRUPT_CLEAR_REG                      0x0B
-#define GLOBAL_CONFIG_SPAD_ENABLES_REF_0_REG            0xB0
-#define GPIO_HV_MUX_ACTIVE_HIGH_REG                     0x84
-#define SYSTEM_INTERRUPT_CLEAR_REG                      0x0B
-#define RESULT_RANGE_STATUS_REG                         0x14
-#define VL53LXX_RA_IDENTIFICATION_MODEL_ID              0xC0
-#define VL53LXX_IDENTIFICATION_MODEL_ID                 0xEEAA
+#define VL53LXX_MAX_RANGING_DISTANCE                     2.0f
+#define VL53LXX_MIN_RANGING_DISTANCE                     0.0f
 
-#define VL53LXX_US                                      1000    // 1ms
-#define VL53LXX_SAMPLE_RATE                             50000   // 50ms
+#define VL53LXX_MEASURE_DELAY_US                         1_ms
+#define VL53LXX_MEASUREM_INTERVAL                              50_us
 
-#define VL53LXX_MAX_RANGING_DISTANCE                    2.0f
-#define VL53LXX_MIN_RANGING_DISTANCE                    0.0f
+#define VL53LXX_IDENTIFICATION_MODEL_ID                  0xEEAA
 
-#define VL53LXX_BUS_CLOCK                               400000 // 400kHz bus clock speed
+// VL53L0X Registers addresses.
+#ifdef VL53L0X
+# define SYSRANGE_START_REG                              VL53L0X_REG_SYSRANGE_START
+# define RESULT_RANGE_STATUS_REG                         VL53L0X_REG_RESULT_RANGE_STATUS
+# define RESULT_INTERRUPT_STATUS_REG                     VL53L0X_REG_RESULT_INTERRUPT_STATUS
+# define SYSTEM_INTERRUPT_CONFIG_GPIO_REG                VL53L0X_REG_SYSTEM_INTERRUPT_CONFIG_GPIO
+# define SYSTEM_INTERRUPT_CLEAR_REG                      VL53L0X_REG_SYSTEM_INTERRUPT_CLEAR
+# define SYSTEM_SEQUENCE_CONFIG_REG                      VL53L0X_REG_SYSRANGE_MODE_START_STOP
+# define FINAL_RANGE_CONFIG_MIN_COUNT_RATE_RTN_LIMIT_REG VL53L0X_REG_FINAL_RANGE_CONFIG_MIN_COUNT_RATE_RTN_LIMIT
+# define DYNAMIC_SPAD_NUM_REQUESTED_REF_SPAD_REG         VL53L0X_REG_DYNAMIC_SPAD_NUM_REQUESTED_REF_SPAD
+# define DYNAMIC_SPAD_REF_EN_START_OFFSET_REG            VL53L0X_REG_DYNAMIC_SPAD_REF_EN_START_OFFSET
+# define MSRC_CONFIG_CONTROL_REG                         VL53L0X_REG_MSRC_CONFIG_CONTROL
+# define GPIO_HV_MUX_ACTIVE_HIGH_REG                     VL53L0X_REG_GPIO_HV_MUX_ACTIVE_HIGH
+# define VHV_CONFIG_PAD_SCL_SDA_EXTSUP_HW_REG            VL53L0X_REG_VHV_CONFIG_PAD_SCL_SDA__EXTSUP_HV
+# define GLOBAL_CONFIG_SPAD_ENABLES_REF_0_REG            VL53L0X_REG_GLOBAL_CONFIG_SPAD_ENABLES_REF_0
+# define GLOBAL_CONFIG_REF_EN_START_SELECT_REG           VL53L0X_REG_GLOBAL_CONFIG_REF_EN_START_SELECT
+# define VL53LXX_RA_IDENTIFICATION_MODEL_ID              VL53L0X_REG_IDENTIFICATION_MODEL_ID
+// VL53L1X Registers addresses.
+#elif VL53L1X
+# define SYSRANGE_START_REG                              VL53L1_SYSTEM__MODE_START                       // ?????? This needs to be verified.
+# define RESULT_INTERRUPT_STATUS_REG                     VL53L1_RESULT__INTERRUPT_STATUS
+# define RESULT_RANGE_STATUS_REG                         VL53L1_RESULT__RANGE_STATUS
+# define SYSTEM_INTERRUPT_CONFIG_GPIO_REG                VL53L1_SYSTEM__INTERRUPT_CONFIG_GPIO
+# define SYSTEM_INTERRUPT_CLEAR_REG                      VL53L1_SYSTEM__INTERRUPT_CLEAR
+# define SYSTEM_SEQUENCE_CONFIG_REG                      VL53L1_SYSTEM__SEQUENCE_CONFIG
+# define FINAL_RANGE_CONFIG_MIN_COUNT_RATE_RTN_LIMIT_REG VL53L1_GPH__RANGE_CONFIG__MIN_COUNT_RATE_RTN_LIMIT_MCPS
+# define DYNAMIC_SPAD_NUM_REQUESTED_REF_SPAD_REG         VL53L1_DSS_RESULT__NUM_REQUESTED_SPADS
+# define DYNAMIC_SPAD_REF_EN_START_OFFSET_REG            VL53L1_REF_SPAD_MAN__REF_LOCATION               // ?????? This needs to be verified.
+# define MSRC_CONFIG_CONTROL_REG                         VL53L1_DSS_CONFIG__ROI_MODE_CONTROL             // ?????? This needs to be verified.
+# define GPIO_HV_MUX_ACTIVE_HIGH_REG                     VL53L1_GPIO_HV_MUX__CTRL
+# define VHV_CONFIG_PAD_SCL_SDA_EXTSUP_HW_REG            VL53L1_PAD_I2C_HV__EXTSUP_CONFIG                // ?????? This needs to be verified.
+# define GLOBAL_CONFIG_SPAD_ENABLES_REF_0_REG            VL53L1_GLOBAL_CONFIG__SPAD_ENABLES_REF_0
+# define GLOBAL_CONFIG_REF_EN_START_SELECT_REG           VL53L1_GLOBAL_CONFIG__REF_EN_START_SELECT
+# define VL53LXX_RA_IDENTIFICATION_MODEL_ID              VL53L1_IDENTIFICATION__MODEL_ID
+#endif
+
 
 class VL53LXX : public device::I2C, public px4::ScheduledWorkItem
 {
@@ -150,7 +174,7 @@ private:
 	bool _new_measurement{true};
 
 	int _class_instance{-1};
-	int _measure_interval{VL53LXX_SAMPLE_RATE};
+	int _measure_interval{VL53LXX_MEASUREM_INTERVAL};
 	int _orb_class_instance{-1};
 
 	uint8_t _rotation{0};
@@ -222,7 +246,7 @@ VL53LXX::collect()
 	struct distance_sensor_s report;
 	report.timestamp        = hrt_absolute_time();
 	report.current_distance = distance_m;
-	report.id               = 0;	// TODO: set propoer ID
+	report.id               = 0;    // TODO: set propoer ID
 	report.max_distance     = VL53LXX_MAX_RANGING_DISTANCE;
 	report.min_distance     = VL53LXX_MIN_RANGING_DISTANCE;
 	report.orientation      = _rotation;
@@ -303,13 +327,12 @@ VL53LXX::measure()
 		readRegister(SYSRANGE_START_REG, system_start);
 
 		if ((system_start & 0x01) == 1) {
-			ScheduleDelayed(VL53LXX_US);
+			ScheduleDelayed(VL53LXX_MEASURE_DELAY_US);
 			return PX4_OK;
 
 		} else {
 			_measurement_started = true;
 		}
-
 	}
 
 	if (!_collect_phase && !_measurement_started) {
@@ -317,7 +340,7 @@ VL53LXX::measure()
 		readRegister(SYSRANGE_START_REG, system_start);
 
 		if ((system_start & 0x01) == 1) {
-			ScheduleDelayed(VL53LXX_US);
+			ScheduleDelayed(VL53LXX_MEASURE_DELAY_US);
 			return PX4_OK;
 
 		} else {
@@ -328,7 +351,7 @@ VL53LXX::measure()
 	readRegister(RESULT_INTERRUPT_STATUS_REG, wait_for_measurement);
 
 	if ((wait_for_measurement & 0x07) == 0) {
-		ScheduleDelayed(VL53LXX_US); // reschedule every 1 ms until measurement is ready
+		ScheduleDelayed(VL53LXX_MEASURE_DELAY_US); // reschedule every 1 ms until measurement is ready
 		return PX4_OK;
 	}
 
@@ -478,8 +501,6 @@ VL53LXX::Run()
 		_new_measurement = true;
 
 		collect();
-
-		ScheduleDelayed(_measure_interval);
 	}
 }
 
@@ -553,10 +574,10 @@ VL53LXX::spadCalculations()
 
 	sensorTuning();
 
-	writeRegister(SYSTEM_INTERRUPT_CONFIG_GPIO_REG, 4);		// 4: GPIO interrupt on new data.
+	writeRegister(SYSTEM_INTERRUPT_CONFIG_GPIO_REG, 4);             // 4: GPIO interrupt on new data.
 	readRegister(GPIO_HV_MUX_ACTIVE_HIGH_REG, val);
 
-	writeRegister(GPIO_HV_MUX_ACTIVE_HIGH_REG, val & ~0x10);	// Active low.
+	writeRegister(GPIO_HV_MUX_ACTIVE_HIGH_REG, val & ~0x10);        // Active low.
 	writeRegister(SYSTEM_INTERRUPT_CLEAR_REG, 0x01);
 	writeRegister(SYSTEM_SEQUENCE_CONFIG_REG, 0xE8);
 	writeRegister(SYSTEM_SEQUENCE_CONFIG_REG, 0x01);
@@ -567,7 +588,7 @@ VL53LXX::spadCalculations()
 
 	singleRefCalibration(0x00);
 
-	writeRegister(SYSTEM_SEQUENCE_CONFIG_REG, 0xE8);		// Restore config.
+	writeRegister(SYSTEM_SEQUENCE_CONFIG_REG, 0xE8);                // Restore config.
 
 	return OK;
 }
@@ -734,8 +755,8 @@ VL53LXX::start()
 	// Flush the report ring buffer.
 	_reports->flush();
 
-	// Schedule the first cycle.
-	ScheduleNow();
+	// Schedule the driver to run at regular intervals.
+	ScheduleOnInterval(_measure_interval);
 }
 
 void
