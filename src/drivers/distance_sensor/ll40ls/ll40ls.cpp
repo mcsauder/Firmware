@@ -65,6 +65,8 @@ namespace ll40ls
 LidarLite *instance = nullptr;
 
 int print_regs();
+int reset();
+int set_address(const uint8_t address = LL40LS_BASE_ADDR);
 int start(const uint8_t rotation = distance_sensor_s::ROTATION_DOWNWARD_FACING);
 int start_bus(const int bus = PX4_I2C_BUS_EXPANSION,
 	      const uint8_t rotation = distance_sensor_s::ROTATION_DOWNWARD_FACING);
@@ -85,6 +87,32 @@ print_regs()
 	}
 
 	instance->print_registers();
+	return PX4_OK;
+}
+
+/**
+ * Reset the driver.
+ */
+int
+reset()
+{
+	PX4_INFO("driver resetting");
+	stop();
+	start();
+	return PX4_OK;
+}
+
+int
+set_address(const uint8_t address)
+{
+	if (instance != nullptr) {
+		if (instance->set_address(address) != PX4_OK) {
+			PX4_ERR("address not set");
+			return PX4_ERROR;
+		}
+	}
+
+	reset();
 	return PX4_OK;
 }
 
@@ -272,6 +300,7 @@ extern "C" __EXPORT int ll40ls_main(int argc, char *argv[])
 	int myoptind = 1;
 
 	uint8_t rotation = distance_sensor_s::ROTATION_DOWNWARD_FACING;
+	uint8_t address = LL40LS_BASE_ADDR;
 
 	bool start_i2c_all = false;
 	bool start_pwm = false;
@@ -320,6 +349,11 @@ extern "C" __EXPORT int ll40ls_main(int argc, char *argv[])
 	// Print the sensor register values.
 	if (!strcmp(argv[myoptind], "print_regs")) {
 		return ll40ls::print_regs();
+	}
+
+	// Set the device I2C address.
+	if (!strcmp(argv[myoptind], "set_address")) {
+		return ll40ls::set_address(address);
 	}
 
 	// Start the driver.

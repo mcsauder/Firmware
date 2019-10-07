@@ -48,27 +48,35 @@
 #include <px4_defines.h>
 #include <px4_platform_common/px4_work_queue/ScheduledWorkItem.hpp>
 
-
 /* Configuration Constants */
-static constexpr uint8_t LL40LS_BASEADDR              = 0x62; /* 7-bit address */
-static constexpr uint8_t LL40LS_BASEADDR_OLD          = 0x42; /* previous 7-bit address */
 static constexpr uint8_t LL40LS_SIG_COUNT_VAL_DEFAULT = 0x80; /* Default maximum acquisition count */
 
 /* LL40LS Registers addresses */
 static constexpr uint8_t LL40LS_MEASURE_REG           = 0x00; /* Measure range register */
 static constexpr uint8_t LL40LS_MSRREG_RESET          = 0x00; /* reset to power on defaults */
+static constexpr uint8_t LL40LS_SYSTEM_STATUS         = 0x01; /* System status register */
 static constexpr uint8_t LL40LS_MSRREG_ACQUIRE        = 0x04; /* Value to acquire a measurement, version specific */
+static constexpr uint8_t LL40LS_DISABLE_DEFAULT_ADDR  = 0x08; /* Disables use of the default device address. */
+static constexpr uint8_t LL40LS_ENABLE_NEW_ADDR       = 0x10; /* Enables use of a non-default device address. */
 static constexpr uint8_t LL40LS_DISTHIGH_REG          = 0x0F; /* High byte of distance register, auto increment */
 static constexpr uint8_t LL40LS_AUTO_INCREMENT        = 0x80;
 static constexpr uint8_t LL40LS_HW_VERSION            = 0x41;
 static constexpr uint8_t LL40LS_SW_VERSION            = 0x4f;
 static constexpr uint8_t LL40LS_SIGNAL_STRENGTH_REG   = 0x0e;
 static constexpr uint8_t LL40LS_PEAK_STRENGTH_REG     = 0x0c;
-static constexpr uint8_t LL40LS_UNIT_ID_HIGH          = 0x16;
-static constexpr uint8_t LL40LS_UNIT_ID_LOW           = 0x17;
+
+static constexpr uint8_t LL40LS_UNIT_ID_HIGH          = 0x16; /* Serial number high byte - Unique. */
+static constexpr uint8_t LL40LS_UNIT_ID_LOW           = 0x17; /* Serial number low byte - Unique. */
+static constexpr uint8_t LL40LS_I2C_ID_HIGH           = 0x18; /* Write serial number high byte for address unlock. */
+static constexpr uint8_t LL40LS_I2C_ID_LOW            = 0x19; /* Write serial number low byte for address unlock. */
+static constexpr uint8_t LL40LS_I2C_SEC_ADDR          = 0x1a; /* Write new I2C address after unlock */
+static constexpr uint8_t LL40LS_I2C_CONFIG            = 0x1e; /* Default address response control 0x00 */
 
 static constexpr uint8_t LL40LS_SIG_COUNT_VAL_REG     = 0x02; /* Maximum acquisition count register */
 static constexpr uint8_t LL40LS_SIG_COUNT_VAL_MAX     = 0xFF; /* Maximum acquisition count max value */
+
+static constexpr uint8_t LL40LS_POWER_CONTROL         = 0x65; /* Activate/deactive sleep mode. */
+static constexpr uint8_t LL40LS_SERIAL_NUMBER_REG     = 0x96; /* Serial number register. */
 
 static constexpr int LL40LS_SIGNAL_STRENGTH_MIN_V3HP  = 70;  /* Min signal strength for V3HP */
 static constexpr int LL40LS_SIGNAL_STRENGTH_MAX_V3HP  = 255; /* Max signal strength for V3HP */
@@ -82,7 +90,7 @@ class LidarLiteI2C : public LidarLite, public device::I2C, public px4::Scheduled
 {
 public:
 	LidarLiteI2C(const int bus, const uint8_t rotation = distance_sensor_s::ROTATION_DOWNWARD_FACING,
-		     const int address = LL40LS_BASEADDR);
+		     const int address = LL40LS_BASE_ADDR);
 	virtual ~LidarLiteI2C();
 
 	int init() override;
@@ -91,6 +99,8 @@ public:
 	 * Print sensor registers to console for debugging.
 	 */
 	void print_registers() override;
+
+	int set_address(const uint8_t address = LL40LS_BASE_ADDR) override;
 
 	/**
 	 * Initialise the automatic measurement state machine and start it.
@@ -109,12 +119,12 @@ protected:
 
 	int measure() override;
 
+	int probe() override;
+
 	/**
 	 * Reset the sensor to power on defaults plus additional configurations.
 	 */
 	int reset_sensor() override;
-
-	int probe() override;
 
 	int read_reg(const uint8_t reg, uint8_t &val);
 
@@ -123,6 +133,11 @@ protected:
 private:
 
 	int collect() override;
+
+	/**
+	 * Gets the current sensor orientation value.
+	 */
+	int get_sensor_orientation(const size_t index);
 
 	/**
 	 * LidarLite specific transfer function. This is needed
@@ -135,7 +150,7 @@ private:
 	 * @return              OK if the transfer was successful, -errno
 	 *                      otherwise.
 	 */
-	int lidar_transfer(const uint8_t *send, const unsigned send_len, uint8_t *recv, const unsigned recv_len);
+	int lidar_lite_transfer(const uint8_t *send, const unsigned send_len, uint8_t *recv, const unsigned recv_len);
 
 	/**
 	 * Test whether the device supported by the driver is present at a
@@ -154,7 +169,9 @@ private:
 
 	bool _collect_phase{false};
 	bool _is_v3hp{false};
-	bool _pause_measurements{false};
+
+	size_t _sensor_index{0};	// Initialize counter for cycling i2c adresses to zero.
+	size_t _sensor_count{0};	// Number of sensors connected.
 
 	uint8_t _hw_version{0};
 	uint8_t _sw_version{0};
@@ -163,4 +180,25 @@ private:
 	uint16_t _zero_counter{0};
 
 	uint64_t _acquire_time_usec{0};
+
+	px4::Array<uint8_t, RANGE_FINDER_MAX_SENSORS> _sensor_addresses {};
+	px4::Array<uint8_t, RANGE_FINDER_MAX_SENSORS> _sensor_rotations {};
+
+	px4::Array<uint16_t, RANGE_FINDER_MAX_SENSORS> _sensor_serial_numbers {};
+
+	DEFINE_PARAMETERS(
+		(ParamInt<px4::params::SENS_EN_LL40LS>) _p_sensor_enabled,
+		(ParamInt<px4::params::LL40LS_0_ROT>)   _p_sensor0_rot,
+		(ParamInt<px4::params::LL40LS_1_ROT>)   _p_sensor1_rot,
+		(ParamInt<px4::params::LL40LS_2_ROT>)   _p_sensor2_rot,
+		(ParamInt<px4::params::LL40LS_3_ROT>)   _p_sensor3_rot,
+		(ParamInt<px4::params::LL40LS_4_ROT>)   _p_sensor4_rot,
+		(ParamInt<px4::params::LL40LS_5_ROT>)   _p_sensor5_rot,
+		(ParamInt<px4::params::LL40LS_6_ROT>)   _p_sensor6_rot,
+		(ParamInt<px4::params::LL40LS_7_ROT>)   _p_sensor7_rot,
+		(ParamInt<px4::params::LL40LS_8_ROT>)   _p_sensor8_rot,
+		(ParamInt<px4::params::LL40LS_9_ROT>)   _p_sensor9_rot,
+		(ParamInt<px4::params::LL40LS_10_ROT>)  _p_sensor10_rot,
+		(ParamInt<px4::params::LL40LS_11_ROT>)  _p_sensor11_rot
+	);
 };

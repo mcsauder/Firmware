@@ -40,9 +40,11 @@
  */
 #pragma once
 
+#include <containers/Array.hpp>
 #include <drivers/device/device.h>
 #include <lib/drivers/rangefinder/PX4Rangefinder.hpp>
 #include <perf/perf_counter.h>
+#include <px4_module_params.h>
 
 using namespace time_literals;
 
@@ -52,20 +54,23 @@ static constexpr float LL40LS_MAX_DISTANCE{25.00f};
 static constexpr float LL40LS_MAX_DISTANCE_V2{35.00f};
 
 // Normal conversion wait time.
-static constexpr uint32_t LL40LS_CONVERSION_INTERVAL{50_ms};
+static constexpr uint32_t LL40LS_MEASUREMENT_INTERVAL{50_ms};
 
 // Maximum time to wait for a conversion to complete.
-static constexpr uint32_t LL40LS_CONVERSION_TIMEOUT{100_ms};
+static constexpr uint32_t LL40LS_MEASUREMENT_TIMEOUT{100_ms};
 
-class LidarLite
+// Sensor base addresses.
+static constexpr uint8_t LL40LS_BASE_ADDR{0x62};        /* 7-bit address */
+static constexpr uint8_t LL40LS_BASE_ADDR_8_BIT{0xc4};  /* 8-bit address */
+static constexpr uint8_t LL40LS_BASE_ADDR_OLD{0x42};    /* previous 7-bit address */
+
+class LidarLite : public ModuleParams
 {
 public:
 	LidarLite(const uint8_t rotation = distance_sensor_s::ROTATION_DOWNWARD_FACING);
 	virtual ~LidarLite();
 
 	virtual int init() = 0;
-	virtual void start() = 0;
-	virtual void stop() = 0;
 
 	/**
 	 * @brief Diagnostics - print some basic information about the driver.
@@ -77,9 +82,17 @@ public:
 	 */
 	virtual void print_registers() {};
 
-protected:
+	/**
+	 * Sets a new I2C device address, (always returns PX4_OK for PWM sensors).
+	 * @param address The new I2C sensor address value.
+	 * @return Returns PX4_OK iff successful, PX4_ERROR otherwise.
+	 */
+	virtual int set_address(const uint8_t address = LL40LS_BASE_ADDR) { return PX4_OK; };
 
-	uint32_t get_measure_interval() const { return _measure_interval; };
+	virtual void start() = 0;
+	virtual void stop() = 0;
+
+protected:
 
 	virtual int collect() = 0;
 
@@ -87,14 +100,14 @@ protected:
 
 	virtual int reset_sensor() { return PX4_ERROR; };
 
-	PX4Rangefinder	_px4_rangefinder;
+	uint32_t _measure_interval{LL40LS_MEASUREMENT_INTERVAL};
 
 	perf_counter_t _comms_errors{perf_alloc(PC_COUNT, "ll40ls: comms errors")};
 	perf_counter_t _sample_perf{perf_alloc(PC_ELAPSED, "ll40ls: read")};
 	perf_counter_t _sensor_resets{perf_alloc(PC_COUNT, "ll40ls: resets")};
-	perf_counter_t _sensor_zero_resets{perf_alloc(PC_COUNT, "ll40ls: zero resets")};
+
+	PX4Rangefinder	_px4_rangefinder;
 
 private:
 
-	uint32_t  _measure_interval{LL40LS_CONVERSION_INTERVAL};
 };

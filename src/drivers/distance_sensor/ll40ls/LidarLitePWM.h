@@ -61,19 +61,20 @@ public:
 	virtual ~LidarLitePWM();
 
 	int init() override;
-	void start() override;
-	void stop() override;
 
 	void Run() override;
+
+	void start() override;
+
+	void stop() override;
 
 protected:
 
 	int collect() override;
+
 	int measure() override;
 
 private:
-
-	int _pwmSub{-1};
 
 	pwm_input_s _pwm{};
 };

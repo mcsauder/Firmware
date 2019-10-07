@@ -56,29 +56,29 @@ LidarLitePWM::~LidarLitePWM()
 }
 
 int
+LidarLitePWM::collect()
+{
+	int fd = ::open(PWMIN0_DEVICE_PATH, O_RDONLY);
+
+	if (fd == -1) {
+		return PX4_ERROR;
+	}
+
+	if (::read(fd, &_pwm, sizeof(_pwm)) == sizeof(_pwm)) {
+		::close(fd);
+		return PX4_OK;
+	}
+
+	::close(fd);
+	return EAGAIN;
+}
+
+int
 LidarLitePWM::init()
 {
 	start();
 
 	return PX4_OK;
-}
-
-void
-LidarLitePWM::start()
-{
-	ScheduleOnInterval(get_measure_interval());
-}
-
-void
-LidarLitePWM::stop()
-{
-	ScheduleClear();
-}
-
-void
-LidarLitePWM::Run()
-{
-	measure();
 }
 
 int
@@ -99,7 +99,7 @@ LidarLitePWM::measure()
 
 	/* Due to a bug in older versions of the LidarLite firmware, we have to reset sensor on (distance == 0) */
 	if (current_distance <= 0.0f) {
-		perf_count(_sensor_zero_resets);
+		perf_count(_sensor_resets);
 		perf_end(_sample_perf);
 		return reset_sensor();
 	}
@@ -110,20 +110,24 @@ LidarLitePWM::measure()
 	return PX4_OK;
 }
 
-int
-LidarLitePWM::collect()
+void
+LidarLitePWM::Run()
 {
-	int fd = ::open(PWMIN0_DEVICE_PATH, O_RDONLY);
+	measure();
+}
 
-	if (fd == -1) {
-		return PX4_ERROR;
-	}
+void
+LidarLitePWM::start()
+{
+	// Fetch parameter values.
+	ModuleParams::updateParams();
 
-	if (::read(fd, &_pwm, sizeof(_pwm)) == sizeof(_pwm)) {
-		::close(fd);
-		return PX4_OK;
-	}
+	// Schedule the driver cycle.
+	ScheduleOnInterval(_measure_interval);
+}
 
-	::close(fd);
-	return EAGAIN;
+void
+LidarLitePWM::stop()
+{
+	ScheduleClear();
 }
