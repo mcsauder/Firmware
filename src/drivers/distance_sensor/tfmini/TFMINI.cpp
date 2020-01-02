@@ -69,7 +69,7 @@ TFMINI::init()
 		// So we set 0.4 as valid minimum.
 		_px4_rangefinder.set_min_distance(0.4f);
 		_px4_rangefinder.set_max_distance(12.0f);
-		_px4_rangefinder.set_fov(math::radians(1.15f));
+		_px4_rangefinder.set_fov(math::radians(2.3f));
 
 		break;
 
