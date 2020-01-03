@@ -77,6 +77,13 @@
 // 3;N-2) Data: data segment. Little endian format
 // N-1) Checksum: sum of all bytes from Head to payload. Lower 8 bits
 
+#define TFMINI_DATA_HEADER 0x59
+#define TFMINI_CMD_HEADER1 0x42
+#define TFMINI_CMD_HEADER2 0x57
+#define TFMINI_CMD_SIZE 8
+
+#define TFMINIPLUS_CMD_HEADER1 0x5A
+#define TFMINIPLUS_INVALID_MEASURE 0xFFFF
 
 enum class TFMINI_MODEL {
 	MODEL_UNKNOWN = 0,
@@ -95,8 +102,8 @@ enum class TFMINI_PARSE_STATE {
 	STATE4_GOT_RESERVED,
 	STATE5_GOT_QUALITY,
 	STATE6_GOT_CHECKSUM,
-	STATE7_GOT_COMMANDRESPONSE,
-	STATE8_GOT_RESPONSECHECKSUM
+	STATE7_GOT_COMMAND_RESPONSE,
+	STATE8_GOT_RESPONSE_CHECKSUM
 };
 
 int tfmini_parse(uint8_t c, uint8_t *parserbuf, unsigned *parserbuf_index, TFMINI_PARSE_STATE *state,

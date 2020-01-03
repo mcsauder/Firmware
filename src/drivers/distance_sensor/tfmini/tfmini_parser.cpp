@@ -51,15 +51,16 @@
 const char *parser_state[] = {
 	"0_UNSYNC",
 	"1_SYNC_1",
-	"2_SYNC_2",
-	"3_GOT_DIST_L",
-	"4_GOT_DIST_H",
-	"5_GOT_STRENGTH_L",
-	"6_GOT_STRENGTH_H",
-	"7_GOT_PRESERVED",
-	"8_GOT_QUALITY",
-	"9_GOT_CHECKSUM",
-	"10_GOT_COMMANDRESPONSE"
+	"1_SYNC_2",
+	"2_GOT_DIST_L",
+	"2_GOT_DIST_H",
+	"3_GOT_STRENGTH_L",
+	"3_GOT_STRENGTH_H",
+	"4_GOT_PRESERVED",
+	"5_GOT_QUALITY",
+	"6_GOT_CHECKSUM",
+	"7_GOT_COMMAND_RESPONSE",
+	"8_GOT_RESPONSE_CHECKSUM"
 };
 #endif
 
@@ -73,19 +74,19 @@ int tfmini_parse(uint8_t c, uint8_t *parserbuf, unsigned *parserbuf_index, TFMIN
 
 	switch (*state) {
 	case TFMINI_PARSE_STATE::STATE6_GOT_CHECKSUM:
-	case TFMINI_PARSE_STATE::STATE8_GOT_RESPONSECHECKSUM:
-		if (c == 0x59) {
+	case TFMINI_PARSE_STATE::STATE8_GOT_RESPONSE_CHECKSUM:
+		if (c == TFMINI_DATA_HEADER) {
 			*state = TFMINI_PARSE_STATE::STATE1_SYNC_1;
 			parserbuf[*parserbuf_index] = c;
 			(*parserbuf_index)++;
 
-		} else if (hw_model == TFMINI_MODEL::MODEL_TFMINI && c == 0x42) {
-			*state = TFMINI_PARSE_STATE::STATE7_GOT_COMMANDRESPONSE;
+		} else if (hw_model == TFMINI_MODEL::MODEL_TFMINI && c == TFMINI_CMD_HEADER1) {
+			*state = TFMINI_PARSE_STATE::STATE7_GOT_COMMAND_RESPONSE;
 			parserbuf[*parserbuf_index] = c;
 			(*parserbuf_index)++;
 
-		} else if (hw_model == TFMINI_MODEL::MODEL_TFMINIPLUS && c == 0x5A) {
-			*state = TFMINI_PARSE_STATE::STATE7_GOT_COMMANDRESPONSE;
+		} else if (hw_model == TFMINI_MODEL::MODEL_TFMINIPLUS && c == TFMINIPLUS_CMD_HEADER1) {
+			*state = TFMINI_PARSE_STATE::STATE7_GOT_COMMAND_RESPONSE;
 			parserbuf[*parserbuf_index] = c;
 			(*parserbuf_index)++;
 
@@ -96,18 +97,18 @@ int tfmini_parse(uint8_t c, uint8_t *parserbuf, unsigned *parserbuf_index, TFMIN
 		break;
 
 	case TFMINI_PARSE_STATE::STATE0_UNSYNC:
-		if (c == 0x59) {
+		if (c == TFMINI_DATA_HEADER) {
 			*state = TFMINI_PARSE_STATE::STATE1_SYNC_1;
 			parserbuf[*parserbuf_index] = c;
 			(*parserbuf_index)++;
 
-		} else if (hw_model == TFMINI_MODEL::MODEL_TFMINI && c == 0x42) {
-			*state = TFMINI_PARSE_STATE::STATE7_GOT_COMMANDRESPONSE;
+		} else if (hw_model == TFMINI_MODEL::MODEL_TFMINI && c == TFMINI_CMD_HEADER1) {
+			*state = TFMINI_PARSE_STATE::STATE7_GOT_COMMAND_RESPONSE;
 			parserbuf[*parserbuf_index] = c;
 			(*parserbuf_index)++;
 
-		} else if (hw_model == TFMINI_MODEL::MODEL_TFMINIPLUS && c == 0x5A) {
-			*state = TFMINI_PARSE_STATE::STATE7_GOT_COMMANDRESPONSE;
+		} else if (hw_model == TFMINI_MODEL::MODEL_TFMINIPLUS && c == TFMINIPLUS_CMD_HEADER1) {
+			*state = TFMINI_PARSE_STATE::STATE7_GOT_COMMAND_RESPONSE;
 			parserbuf[*parserbuf_index] = c;
 			(*parserbuf_index)++;
 		}
@@ -115,18 +116,18 @@ int tfmini_parse(uint8_t c, uint8_t *parserbuf, unsigned *parserbuf_index, TFMIN
 		break;
 
 	case TFMINI_PARSE_STATE::STATE1_SYNC_1:
-		if (c == 0x59) {
+		if (c == TFMINI_DATA_HEADER) {
 			*state = TFMINI_PARSE_STATE::STATE1_SYNC_2;
 			parserbuf[*parserbuf_index] = c;
 			(*parserbuf_index)++;
 
-		} else if (hw_model == TFMINI_MODEL::MODEL_TFMINI && c == 0x42) {
-			*state = TFMINI_PARSE_STATE::STATE7_GOT_COMMANDRESPONSE;
+		} else if (hw_model == TFMINI_MODEL::MODEL_TFMINI && c == TFMINI_CMD_HEADER1) {
+			*state = TFMINI_PARSE_STATE::STATE7_GOT_COMMAND_RESPONSE;
 			parserbuf[*parserbuf_index] = c;
 			(*parserbuf_index)++;
 
-		} else if (hw_model == TFMINI_MODEL::MODEL_TFMINIPLUS && c == 0x5A) {
-			*state = TFMINI_PARSE_STATE::STATE7_GOT_COMMANDRESPONSE;
+		} else if (hw_model == TFMINI_MODEL::MODEL_TFMINIPLUS && c == TFMINIPLUS_CMD_HEADER1) {
+			*state = TFMINI_PARSE_STATE::STATE7_GOT_COMMAND_RESPONSE;
 			parserbuf[*parserbuf_index] = c;
 			(*parserbuf_index)++;
 
@@ -189,9 +190,9 @@ int tfmini_parse(uint8_t c, uint8_t *parserbuf, unsigned *parserbuf_index, TFMIN
 
 		if (c == cksm) {
 			parserbuf[*parserbuf_index] = '\0';
-			*dist = ((float)(parserbuf[2] + (parserbuf[3] << 8))) / 100;
+			*dist = static_cast<float>(parserbuf[2] + (parserbuf[3] << 8)) / 100.f;
 			*strength = parserbuf[4] + (parserbuf[5] << 8);
-			*temperature = ((float)(parserbuf[6] + (parserbuf[7] << 8))) / 8 - 256;
+			*temperature = static_cast<float>(parserbuf[6] + (parserbuf[7] << 8)) / 8.f - 256.f;
 			*state = TFMINI_PARSE_STATE::STATE6_GOT_CHECKSUM;
 			*parserbuf_index = 0;
 			ret = 0;
@@ -203,27 +204,27 @@ int tfmini_parse(uint8_t c, uint8_t *parserbuf, unsigned *parserbuf_index, TFMIN
 
 		break;
 
-	case TFMINI_PARSE_STATE::STATE7_GOT_COMMANDRESPONSE:
+	case TFMINI_PARSE_STATE::STATE7_GOT_COMMAND_RESPONSE:
 		parserbuf[*parserbuf_index] = c;
 		(*parserbuf_index)++;
 
 		// verify command line answers for tfmini
 		if (hw_model == TFMINI_MODEL::MODEL_TFMINI) {
-			if (parserbuf[1] != 0x57) {
+			if (parserbuf[1] != TFMINI_CMD_HEADER2) {
 				// discard first 2 bytes
 				*state = TFMINI_PARSE_STATE::STATE0_UNSYNC;
 				*parserbuf_index = 0;
 				break;
 			}
 
-			if ((*parserbuf_index) < 8) {
+			if ((*parserbuf_index) < TFMINI_CMD_SIZE) {
 				break;
 			}
 
 			*commandresponse_size = *parserbuf_index;
 			memcpy(commandresponse, parserbuf, *parserbuf_index);
 
-			*state = TFMINI_PARSE_STATE::STATE8_GOT_RESPONSECHECKSUM;
+			*state = TFMINI_PARSE_STATE::STATE8_GOT_RESPONSE_CHECKSUM;
 			*parserbuf_index = 0;
 			break;
 		}
@@ -251,7 +252,7 @@ int tfmini_parse(uint8_t c, uint8_t *parserbuf, unsigned *parserbuf_index, TFMIN
 				*commandresponse_size = *parserbuf_index;
 				memcpy(commandresponse, parserbuf, *parserbuf_index);
 
-				*state = TFMINI_PARSE_STATE::STATE8_GOT_RESPONSECHECKSUM;
+				*state = TFMINI_PARSE_STATE::STATE8_GOT_RESPONSE_CHECKSUM;
 				*parserbuf_index = 0;
 				break;
 			}

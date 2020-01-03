@@ -61,6 +61,25 @@
 
 using namespace time_literals;
 
+enum class TFMINI_SETUP_STEP {
+	STEP0_UNCONFIGURED = 0,
+	STEP1_ENTER_CONFIRMED = 1,
+	STEP2_MODE_CONFIRMED = 2,
+	STEP3_UNIT_CONFIRMED = 3,
+	STEP4_SAVE_CONFIRMED = 4
+};
+
+class TFMINI_SETUP
+{
+public:
+	uint8_t _counter{0};
+	TFMINI_SETUP_STEP _setup_step{TFMINI_SETUP_STEP::STEP0_UNCONFIGURED};
+	uint8_t _com_enter[8] {0x42, 0x57, 0x02, 0x00, 0x00, 0x00, 0x01, 0x02}; //Enter configuration mode
+	uint8_t _com_mode[8] {0x42, 0x57, 0x02, 0x00, 0x00, 0x00, 0x01, 0x06}; //Configure "Standard format, as show in in Table 6"
+	uint8_t _com_unit[8] {0x42, 0x57, 0x02, 0x00, 0x00, 0x00, 0x01, 0x1A}; //Configure "Output unit of distance data is cm"
+	uint8_t _com_save[8] {0x42, 0x57, 0x02, 0x00, 0x00, 0x00, 0x00, 0x02}; //Exit configuration mode
+};
+
 enum class TFMINIPLUS_SETUP_STEP {
 	STEP0_UNCONFIGURED = 0,
 	STEP1_VERSION_CONFIRMED = 1,
@@ -103,6 +122,8 @@ private:
 
 	void start();
 	void stop();
+	void autosetup_tfmini();
+	void autosetup_tfmini_process();
 	void autosetup_tfminiplus();
 	void autosetup_tfminiplus_process();
 
@@ -120,6 +141,7 @@ private:
 	uint8_t _command_response_size{0};
 	uint8_t _command_retry{0};
 
+	TFMINI_SETUP _tfmini_setup;
 	TFMINIPLUS_SETUP _tfminiplus_setup;
 
 	static constexpr int kCONVERSIONINTERVAL{9_ms};
