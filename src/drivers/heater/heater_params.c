@@ -46,7 +46,7 @@
  * @category system
  * @group Sensors
  */
-PARAM_DEFINE_INT32(SENS_TEMP_ID, 0);
+PARAM_DEFINE_INT32(SENS_TEMP_ID, 3932170);
 
 /**
  * Target IMU temperature.
