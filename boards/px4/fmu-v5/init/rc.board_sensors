@@ -15,6 +15,10 @@ icm20689 -s -R 2 start
 bmi055 -A -R 2 -s start
 bmi055 -G -R 2 -s start
 
+# internal compass
+#ist8310 -I start
+bmm150 -I start
+
 # Baro on internal SPI
 ms5611 -s start
 
