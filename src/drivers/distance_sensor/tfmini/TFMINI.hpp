@@ -44,21 +44,40 @@
 
 #pragma once
 
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <termios.h>
 
 #include <drivers/drv_hrt.h>
+#include <lib/drivers/rangefinder/PX4Rangefinder.hpp>
 #include <lib/perf/perf_counter.h>
 #include <px4_platform_common/px4_config.h>
 #include <px4_platform_common/module.h>
 #include <px4_platform_common/px4_work_queue/ScheduledWorkItem.hpp>
-#include <lib/drivers/rangefinder/PX4Rangefinder.hpp>
 #include <uORB/topics/distance_sensor.h>
 
-#include "tfmini_parser.h"
+using namespace time_literals;
 
 #define TFMINI_DEFAULT_PORT	"/dev/ttyS3"
 
-using namespace time_literals;
+static constexpr uint8_t PARSER_BUF_LENGTH{4};
+
+static constexpr uint32_t TFMINI_MEASURE_INTERVAL{100_us};
+
+
+// Data Format for Benewake TFmini
+// ===============================
+// 9 bytes total per message:
+// 1) 0x59
+// 2) 0x59
+// 3) Dist_L (low 8bit)
+// 4) Dist_H (high 8bit)
+// 5) Strength_L (low 8bit)
+// 6) Strength_H (high 8bit)
+// 7) Reserved bytes
+// 8) Original signal quality degree
+// 9) Checksum parity bit (low 8bit), Checksum = Byte1 + Byte2 +...+Byte8. This is only a low 8bit though
 
 class TFMINI : public px4::ScheduledWorkItem
 {
@@ -72,29 +91,49 @@ public:
 
 private:
 
+	enum PARSE_STATE {
+		UNSYNC = 0,
+		SYNC_1,
+		SYNC_2,
+		DIST_L,
+		DIST_H,
+		STRENGTH_L,
+		STRENGTH_H,
+		RESERVED,
+		QUALITY,
+		CHECKSUM
+	};
+
 	int collect();
+
+	int data_parser(const uint8_t check_byte, uint8_t parserbuf[PARSER_BUF_LENGTH], PARSE_STATE &state,
+			unsigned int parserbuf_index, int &distance);
+
+	/**
+	 * Opens and configures the UART serial communications port.
+	 * @param speed The baudrate (speed) to configure the serial UART port.
+	 */
+	int open_serial_port(const speed_t speed = B115200);
 
 	void Run() override;
 
 	void start();
 	void stop();
 
-	PX4Rangefinder	_px4_rangefinder;
-
-	TFMINI_PARSE_STATE _parse_state {TFMINI_PARSE_STATE::STATE0_UNSYNC};
-
-	char _linebuf[10] {};
 	char _port[20] {};
 
-	static constexpr int kCONVERSIONINTERVAL{9_ms};
-
-	int _fd{-1};
+	int _file_descriptor{-1};
 
 	unsigned int _linebuf_index{0};
+
+	uint8_t _linebuf[10] {};
 
 	hrt_abstime _last_read{0};
 
 	perf_counter_t _comms_errors{perf_alloc(PC_COUNT, MODULE_NAME": com_err")};
 	perf_counter_t _sample_perf{perf_alloc(PC_ELAPSED, MODULE_NAME": read")};
 
+	PX4Rangefinder	_px4_rangefinder;
+
+	PARSE_STATE _parse_state {PARSE_STATE::UNSYNC};
 };

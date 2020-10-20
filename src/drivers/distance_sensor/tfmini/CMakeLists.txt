@@ -37,7 +37,6 @@ px4_add_module(
 		TFMINI.cpp
 		TFMINI.hpp
 		tfmini_main.cpp
-		tfmini_parser.cpp
 	MODULE_CONFIG
 		module.yaml
 	DEPENDS

@@ -91,7 +91,6 @@ status()
 int stop()
 {
 	if (g_dev != nullptr) {
-		PX4_INFO("stopping driver");
 		delete g_dev;
 		g_dev = nullptr;
 		PX4_INFO("driver stopped");
