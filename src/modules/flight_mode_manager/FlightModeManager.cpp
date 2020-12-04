@@ -288,6 +288,10 @@ void FlightModeManager::start_flight_task()
 			error =  _flight_tasks.switchTask(FlightTaskIndex::ManualPosition);
 			break;
 
+		case 2:
+			error =  _flight_tasks.switchTask(FlightTaskIndex::AutoManuever);
+			break;
+
 		case 3:
 			error =  _flight_tasks.switchTask(FlightTaskIndex::ManualPositionSmoothVel);
 			break;

@@ -62,6 +62,7 @@ list(APPEND flight_tasks_all
 	Descend
 	Transition
 	ManualAcceleration
+	AutoManuever
 	${flight_tasks_to_add}
 )
 

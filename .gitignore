@@ -20,7 +20,8 @@ build_*/
 cscope.out
 cscope.in.out
 cscope.po.out
-Firmware.sublime-workspace
+PX4-Autpilot.sublime-project
+PX4-Autpilot.sublime-workspace
 user.sublime*
 /Documentation/doxy.log
 /Documentation/html/
