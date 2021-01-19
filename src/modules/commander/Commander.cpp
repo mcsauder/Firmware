@@ -132,7 +132,7 @@ static int power_button_state_notification_cb(board_power_button_state_notificat
 #endif // BOARD_HAS_POWER_CONTROL
 
 #ifndef CONSTRAINED_FLASH
-static bool send_vehicle_command(uint16_t cmd, float param1 = NAN, float param2 = NAN, float param3 = NAN,
+static bool send_vehicle_command(uint32_t cmd, float param1 = NAN, float param2 = NAN, float param3 = NAN,
 				 float param4 = NAN, float param5 = NAN, float param6 = NAN, float param7 = NAN)
 {
 	vehicle_command_s vcmd{};
@@ -358,6 +358,20 @@ int Commander::custom_command(int argc, char *argv[])
 
 		return (ret ? 0 : 1);
 	}
+
+	if (!strcmp(argv[0], "origin")) {
+		if (argc > 3) {
+			// Set the ekf NED origin global coordinates.
+			send_vehicle_command(vehicle_command_s::VEHICLE_CMD_SET_GPS_GLOBAL_ORIGIN, 0.f, 0.f, 0.f, 0.f, *argv[1], *argv[2],
+					     *argv[3]);
+
+		} else {
+			PX4_ERR("missing argument");
+		}
+
+		return 0;
+	}
+
 
 #endif
 

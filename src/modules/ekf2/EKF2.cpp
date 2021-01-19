@@ -214,8 +214,16 @@ bool EKF2::multi_init(int imu, int mag)
 
 int EKF2::print_status()
 {
-	PX4_INFO_RAW("ekf2:%d attitude: %d, local position: %d, global position: %d\n", _instance, _ekf.attitude_valid(),
-		     _ekf.local_position_is_valid(), _ekf.global_position_is_valid());
+	uint64_t origin_time {};
+	map_projection_reference_s origin_pos {};
+	float origin_alt {};
+
+	_ekf.getEkfGlobalOrigin(origin_time, origin_pos, origin_alt);
+
+	PX4_INFO_RAW("ekf2:%d\n attitude: %d\n, local position: %d\n, global position: %f, %f, %f\n\n", _instance,
+		     _ekf.attitude_valid(),
+		     _ekf.local_position_is_valid(), math::degrees(origin_pos.lat_rad), math::degrees(origin_pos.lon_rad),
+		     (double)origin_alt);
 	perf_print_counter(_ecl_ekf_update_perf);
 	perf_print_counter(_ecl_ekf_update_full_perf);
 	return 0;
@@ -261,6 +269,32 @@ void EKF2::Run()
 			PX4_WARN("%d - failed to register callback, retrying", _instance);
 			ScheduleDelayed(1_s);
 			return;
+		}
+	}
+
+	if (_vehicle_command_sub.updated()) {
+		vehicle_command_s vehicle_command;
+
+		if (_vehicle_command_sub.update(&vehicle_command)) {
+			if (vehicle_command.command == vehicle_command_s::VEHICLE_CMD_SET_GPS_GLOBAL_ORIGIN) {
+				if (!_ekf.control_status_flags().in_air) {
+					double latitude = vehicle_command.param5;
+					double longitude = vehicle_command.param6;
+					float altitude = vehicle_command.param7;
+
+					_ekf.setEkfGlobalOrigin(latitude, longitude, altitude);
+
+					// Validate the origin was set.
+					uint64_t origin_time {};
+					map_projection_reference_s origin_pos {};
+					float origin_alt {};
+
+					_ekf.getEkfGlobalOrigin(origin_time, origin_pos, origin_alt);
+
+					PX4_INFO("NED global origin set to: %f, %f, %f\n\n",
+						 math::degrees(origin_pos.lat_rad), math::degrees(origin_pos.lon_rad), (double)origin_alt);
+				}
+			}
 		}
 	}
 
@@ -524,20 +558,14 @@ void EKF2::PublishGlobalPosition(const hrt_abstime &timestamp)
 			global_pos.timestamp_sample = timestamp;
 
 			// Position of local NED origin in GPS / WGS84 frame
-			uint64_t origin_time;
-			map_projection_reference_s ekf_origin;
-			float ref_alt;
-			// true if position (x,y,z) has a valid WGS-84 global reference (ref_lat, ref_lon, alt)
-			const bool ekf_origin_valid = _ekf.get_ekf_origin(&origin_time, &ekf_origin, &ref_alt);
+			if (_ekf.global_origin_valid()) {
 
-			if (ekf_origin_valid) {
-
-				map_projection_reproject(&ekf_origin, position(0), position(1), &global_pos.lat, &global_pos.lon);
+				map_projection_reproject(&_ekf.global_origin(), position(0), position(1), &global_pos.lat, &global_pos.lon);
 
 				float delta_xy[2];
 				_ekf.get_posNE_reset(delta_xy, &global_pos.lat_lon_reset_counter);
 
-				global_pos.alt = -position(2) + ref_alt; // Altitude AMSL in meters
+				global_pos.alt = -position(2) + _ekf.global_origin_altitude(); // Altitude AMSL in meters
 				global_pos.alt_ellipsoid = filter_altitude_ellipsoid(global_pos.alt);
 
 				// global altitude has opposite sign of local down position
@@ -548,13 +576,14 @@ void EKF2::PublishGlobalPosition(const hrt_abstime &timestamp)
 
 				_ekf.get_ekf_gpos_accuracy(&global_pos.eph, &global_pos.epv);
 
-				global_pos.terrain_alt_valid = _ekf.isTerrainEstimateValid();
-
-				if (global_pos.terrain_alt_valid) {
-					global_pos.terrain_alt = ref_alt -  _ekf.getTerrainVertPos(); // Terrain altitude in m, WGS84
+				if (_ekf.isTerrainEstimateValid()) {
+					// Terrain altitude in m, WGS84
+					global_pos.terrain_alt = _ekf.global_origin_altitude() - _ekf.getTerrainVertPos();
+					global_pos.terrain_alt_valid = true;
 
 				} else {
-					global_pos.terrain_alt = 0.0f; // Terrain altitude in m, WGS84
+					global_pos.terrain_alt = NAN;
+					global_pos.terrain_alt_valid = false;
 				}
 
 				global_pos.dead_reckoning = _ekf.inertial_dead_reckoning(); // True if this position is estimated through dead-reckoning
@@ -685,15 +714,21 @@ void EKF2::PublishLocalPosition(const hrt_abstime &timestamp)
 	lpos.v_z_valid = !_preflt_checker.hasVertFailed();
 
 	// Position of local NED origin in GPS / WGS84 frame
-	uint64_t origin_time;
-	map_projection_reference_s ekf_origin_pos;
-	const bool ekf_origin_valid = _ekf.get_ekf_origin(&origin_time, &ekf_origin_pos, &lpos.ref_alt);
-	lpos.ref_timestamp = origin_time;
-	lpos.ref_lat = math::degrees(ekf_origin_pos.lat_rad); // Reference point latitude in degrees
-	lpos.ref_lon = math::degrees(ekf_origin_pos.lon_rad); // Reference point longitude in degrees
+	if (_ekf.global_origin_valid()) {
+		lpos.ref_timestamp = _ekf.global_origin().timestamp;
+		lpos.ref_lat = math::degrees(_ekf.global_origin().lat_rad); // Reference point latitude in degrees
+		lpos.ref_lon = math::degrees(_ekf.global_origin().lon_rad); // Reference point longitude in degrees
+		lpos.ref_alt = _ekf.global_origin_altitude();
+		lpos.xy_global = true;
+		lpos.z_global = true;
 
-	lpos.xy_global = ekf_origin_valid;
-	lpos.z_global = ekf_origin_valid;
+	} else {
+		lpos.ref_lat = static_cast<double>(NAN);
+		lpos.ref_lon = static_cast<double>(NAN);
+		lpos.ref_alt = NAN;
+		lpos.xy_global = false;
+		lpos.z_global = false;
+	}
 
 	Quatf delta_q_reset;
 	_ekf.get_quat_reset(&delta_q_reset(0), &lpos.heading_reset_counter);
